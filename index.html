@@ -46,64 +46,94 @@
       text-decoration: underline;
       cursor: pointer;
     }
+    .note {
+      font-size: 0.95em;
+      color: #888;
+    }
+    label {
+      margin-left: 1em;
+      font-size: 0.96em;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <h1>メールアドレスバリエーション生成ツール</h1>
-  <p>メールアドレスを入力してください（例: example@gmail.com）</p>
+  <p>
+    メールアドレスを入力してください（例: example@gmail.com）<br>
+    <span class="note">
+      ※「.」や「+」を使ったバリエーションはGmailでのみ有効です。他のサービスでは正しく動作しない場合があります。<br>
+      ※「@gmail.com」の場合は「@googlemail.com」もバリエーションに含めます。
+    </span>
+  </p>
   <input type="text" id="emailInput" placeholder="メールアドレス">
+  <input type="checkbox" id="strictMode" checked>
+  <label for="strictMode">Gmail仕様（「.」や「+」を展開）を使う</label>
   <button id="generateBtn">バリエーション生成</button>
   <div id="result"></div>
   <script>
-    // Gmailの仕様
-    // - ユーザー名（@より前）に好きな位置に'.'を入れても同じアドレス扱い
-    // - '+'以降（@より前）はエイリアスとして無視される
-    // 例: example@gmail.com, ex.ample@gmail.com, example+test@gmail.com すべて同じ
-
+    // ドットバリエーション生成
     function generateDotVariations(local) {
-      // すべての箇所に「.」を入れるバリエーションを生成
-      // 例: "abc" -> ["abc", "a.bc", "ab.c", "a.b.c"]
       const results = new Set();
-
       function helper(prefix, rest) {
         if (rest.length === 0) {
           results.add(prefix);
           return;
         }
-        // 次の文字をそのまま追加
         helper(prefix + rest[0], rest.slice(1));
-        // 既にprefixが空でなければ、'.'を挿入してみる
         if (prefix.length > 0) {
           helper(prefix + '.' + rest[0], rest.slice(1));
         }
       }
-
       helper(local[0], local.slice(1));
       return Array.from(results);
     }
-
+    // プラスバリエーション生成
     function generatePlusVariations(local, plusStrings = ["test", "alias", "sample"]) {
-      // +エイリアスをいくつか自動生成
       const plusVariations = plusStrings.map(str => local + '+' + str);
       return [local, ...plusVariations];
     }
 
+    // Gmail仕様のバリエーション生成（@gmail.com/@googlemail.com両対応）
     function generateAllGmailVariations(email) {
       // メールアドレスを分割
-      const m = email.match(/^([a-zA-Z0-9_.+-]+)@gmail\.com$/i);
-      if (!m) return { error: "Gmailアドレス形式のみ対応しています" };
+      const m = email.match(/^([a-zA-Z0-9_.+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})$/);
+      if (!m) return { error: "メールアドレスの形式が正しくありません" };
       const local = m[1];
-      // "."バリエーション
-      const dotVars = generateDotVariations(local);
-      // "+"バリエーション（各ドットバリエーションに対して）
+      let domain = m[2].toLowerCase();
       const plusStrings = ["test", "alias", "sample"];
       const all = new Set();
+
+      // ドットバリエーション
+      const dotVars = generateDotVariations(local);
+
+      // Gmailの場合、@googlemail.comも加算
+      let domains = [domain];
+      if (domain === "gmail.com") {
+        domains.push("googlemail.com");
+      }
       for (const dotVar of dotVars) {
-        // +なし、+test, +alias, +sample
         const plusVars = generatePlusVariations(dotVar, plusStrings);
         for (const v of plusVars) {
-          all.add(v + "@gmail.com");
+          for (const d of domains) {
+            all.add(v + "@" + d);
+          }
         }
+      }
+      return { variations: Array.from(all).sort(), count: all.size };
+    }
+
+    // 通常のバリエーション（なし/エイリアスのみ、@googlemail.comは考慮しない）
+    function generateSimpleVariations(email) {
+      const m = email.match(/^([a-zA-Z0-9_.+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})$/);
+      if (!m) return { error: "メールアドレスの形式が正しくありません" };
+      const local = m[1];
+      const domain = m[2];
+      const plusStrings = ["test", "alias", "sample"];
+      const all = new Set();
+      all.add(local + "@" + domain);
+      for (const s of plusStrings) {
+        all.add(local + "+" + s + "@" + domain);
       }
       return { variations: Array.from(all).sort(), count: all.size };
     }
@@ -111,10 +141,16 @@
     document.getElementById('generateBtn').addEventListener('click', () => {
       const email = document.getElementById('emailInput').value.trim();
       const resultDiv = document.getElementById('result');
+      const strictMode = document.getElementById('strictMode').checked;
       resultDiv.innerHTML = '';
       if (!email) return;
-
-      const { variations, count, error } = generateAllGmailVariations(email);
+      let ret;
+      if (strictMode) {
+        ret = generateAllGmailVariations(email);
+      } else {
+        ret = generateSimpleVariations(email);
+      }
+      const { variations, count, error } = ret;
       if (error) {
         resultDiv.innerHTML = `<span style="color:red">${error}</span>`;
         return;
@@ -127,6 +163,9 @@
       const blob = new Blob([variations.join('\n')], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       resultDiv.innerHTML += `<a class="download-link" href="${url}" download="variations.txt">バリエーション一覧をダウンロード</a>`;
+      if (!strictMode) {
+        resultDiv.innerHTML += `<div class="note">※「.」によるバリエーション展開はGmail仕様のみです。他サービスでは利用できません。</div>`;
+      }
     });
   </script>
 </body>
