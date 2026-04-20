@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>メールアドレスバリエーション生成ツール</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 2em;
+      background: #f8f8f8;
+      color: #222;
+    }
+    h1 {
+      color: #2980b9;
+    }
+    input[type="text"] {
+      width: 320px;
+      padding: 0.5em;
+      font-size: 1.1em;
+    }
+    button {
+      padding: 0.5em 1.5em;
+      font-size: 1.1em;
+      margin-left: 1em;
+      background: #2980b9;
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #3498db;
+    }
+    #result {
+      margin-top: 2em;
+      background: #fff;
+      border-radius: 5px;
+      padding: 1.5em;
+      box-shadow: 0 2px 8px #ddd;
+    }
+    .download-link {
+      display: inline-block;
+      margin-top: 1em;
+      color: #2980b9;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>メールアドレスバリエーション生成ツール</h1>
+  <p>メールアドレスを入力してください（例: example@gmail.com）</p>
+  <input type="text" id="emailInput" placeholder="メールアドレス">
+  <button id="generateBtn">バリエーション生成</button>
+  <div id="result"></div>
+  <script>
+    // Gmailの仕様
+    // - ユーザー名（@より前）に好きな位置に'.'を入れても同じアドレス扱い
+    // - '+'以降（@より前）はエイリアスとして無視される
+    // 例: example@gmail.com, ex.ample@gmail.com, example+test@gmail.com すべて同じ
+
+    function generateDotVariations(local) {
+      // すべての箇所に「.」を入れるバリエーションを生成
+      // 例: "abc" -> ["abc", "a.bc", "ab.c", "a.b.c"]
+      const results = new Set();
+
+      function helper(prefix, rest) {
+        if (rest.length === 0) {
+          results.add(prefix);
+          return;
+        }
+        // 次の文字をそのまま追加
+        helper(prefix + rest[0], rest.slice(1));
+        // 既にprefixが空でなければ、'.'を挿入してみる
+        if (prefix.length > 0) {
+          helper(prefix + '.' + rest[0], rest.slice(1));
+        }
+      }
+
+      helper(local[0], local.slice(1));
+      return Array.from(results);
+    }
+
+    function generatePlusVariations(local, plusStrings = ["test", "alias", "sample"]) {
+      // +エイリアスをいくつか自動生成
+      const plusVariations = plusStrings.map(str => local + '+' + str);
+      return [local, ...plusVariations];
+    }
+
+    function generateAllGmailVariations(email) {
+      // メールアドレスを分割
+      const m = email.match(/^([a-zA-Z0-9_.+-]+)@gmail\.com$/i);
+      if (!m) return { error: "Gmailアドレス形式のみ対応しています" };
+      const local = m[1];
+      // "."バリエーション
+      const dotVars = generateDotVariations(local);
+      // "+"バリエーション（各ドットバリエーションに対して）
+      const plusStrings = ["test", "alias", "sample"];
+      const all = new Set();
+      for (const dotVar of dotVars) {
+        // +なし、+test, +alias, +sample
+        const plusVars = generatePlusVariations(dotVar, plusStrings);
+        for (const v of plusVars) {
+          all.add(v + "@gmail.com");
+        }
+      }
+      return { variations: Array.from(all).sort(), count: all.size };
+    }
+
+    document.getElementById('generateBtn').addEventListener('click', () => {
+      const email = document.getElementById('emailInput').value.trim();
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '';
+      if (!email) return;
+
+      const { variations, count, error } = generateAllGmailVariations(email);
+      if (error) {
+        resultDiv.innerHTML = `<span style="color:red">${error}</span>`;
+        return;
+      }
+      resultDiv.innerHTML = `<b>生成バリエーション数：</b> ${count}<br><br>`;
+      resultDiv.innerHTML += '<details><summary>バリエーション一覧（クリックで展開）</summary><div style="max-height: 300px;overflow:auto;"><pre>' +
+        variations.join('\n') +
+        '</pre></div></details>';
+      // ダウンロードリンク
+      const blob = new Blob([variations.join('\n')], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      resultDiv.innerHTML += `<a class="download-link" href="${url}" download="variations.txt">バリエーション一覧をダウンロード</a>`;
+    });
+  </script>
+</body>
+</html>
